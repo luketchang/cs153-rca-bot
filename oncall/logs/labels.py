@@ -4,10 +4,12 @@ import requests
 from dotenv import load_dotenv
 
 from oncall.constants import LOKI_PASSWORD, LOKI_USERNAME
+from oncall.lib.time import to_unix_nano
 
 load_dotenv()
 
-def get_time_range(hours_back=48):
+
+def get_time_range(hours_back=24):
     now = datetime.utcnow()
     start = now - timedelta(hours=hours_back)
     start_ns = int(start.timestamp() * 1e9)
@@ -41,23 +43,34 @@ def fetch_loki_label_values(base_url, label_name, start_ns, end_ns):
         return None
 
 
-if __name__ == "__main__":
-    base_url = "https://logs-prod-021.grafana.net"
-    # Get time range for the last 1 hour
-    start_ns, end_ns = get_time_range(hours_back=48)
-
+def build_labels_map(base_url, start, end):
+    """
+    Returns a dictionary mapping each label to its list of values.
+    """
+    start_ns, end_ns = to_unix_nano(start), to_unix_nano(end)
     labels = fetch_loki_labels(base_url, start_ns, end_ns)
     if labels is None:
-        print("No labels fetched.")
-        exit(1)
+        return {}
 
-    print("Available labels in Loki (last hour):")
+    labels_map = {}
     for label in labels:
-        print(f"  {label}")
         values = fetch_loki_label_values(base_url, label, start_ns, end_ns)
         if values:
-            print(f"    Values for '{label}':")
+            labels_map[label] = values
+        else:
+            labels_map[label] = []
+    return labels_map
+
+
+if __name__ == "__main__":
+    base_url = "https://logs-prod-021.grafana.net"
+    labels_map = build_labels_map(base_url, hours_back=24)
+
+    print("Labels and their values in Loki (last 24 hours):")
+    for label, values in labels_map.items():
+        print(f"  {label}:")
+        if values:
             for v in values:
                 print(f"      {v}")
         else:
-            print(f"    (No values found for '{label}')")
+            print("      (No values found)")

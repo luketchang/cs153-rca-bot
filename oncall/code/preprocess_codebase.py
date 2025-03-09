@@ -5,6 +5,7 @@ import tempfile
 from common import EXCLUDED_DIRS, clone_repository, collect_files, generate_tree_string
 from langchain_core.prompts import ChatPromptTemplate
 
+from oncall.code.models import SelectedModules
 from oncall.lib.logging import logger, traceback_log_err
 from oncall.lib.utils import get_llm
 
@@ -52,13 +53,30 @@ Walkthroughs for each major module/directory:
 Please provide the final merged system architecture document.
 """
 
+SERVICE_IDENTIFICATION_TEMPLATE = """
+You are given the file tree of a repository. Your task is to identify upper-level directories that represent separate services. These directories are independent services that can (or should) be summarized individually.
+
+Return a JSON array of directory paths (relative to the repository root) that should be treated as separate services or packages. Prioritize recall over precision, be generous about including directories as services. But note that you must choose directories not actual files.
+Repository File Tree:
+{repo_file_tree}
+"""
+
 
 class CodebaseProcessor:
     def __init__(self, llm, repo_url, system_description=""):
         self.llm = llm
         self.repo_url = repo_url
         self.system_description = system_description
-        self.allowed_extensions = (".py", ".js", ".ts", ".java", ".go", ".rs", ".yaml")
+        self.allowed_extensions = (
+            ".py",
+            ".js",
+            ".ts",
+            ".java",
+            ".go",
+            ".rs",
+            ".yaml",
+            ".cs",
+        )
 
     def list_major_directories(self, repo_path):
         dirs = []
@@ -69,6 +87,43 @@ class CodebaseProcessor:
             ):
                 dirs.append(full_path)
         return dirs
+
+    def identify_services(self, repo_path, repo_file_tree):
+        tree_str = generate_tree_string(repo_file_tree)
+        print("File tree:", tree_str)
+        prompt_template = ChatPromptTemplate.from_template(
+            SERVICE_IDENTIFICATION_TEMPLATE
+        )
+        chain = prompt_template | self.llm.with_structured_output(SelectedModules)
+        structured_output = chain.invoke({"repo_file_tree": tree_str})
+
+        # Log the structured output for debugging
+        logger.info(f"Service identification structured output: {structured_output}")
+
+        try:
+            # structured_output is expected to be an instance of SelectedModules
+            selections = structured_output.selections
+            if not selections:
+                logger.info(
+                    "No service directories identified in structured output; falling back to major directories."
+                )
+                return []
+            abs_service_dirs = []
+            for selection in selections:
+                rel_path = selection.module
+                abs_path = os.path.join(repo_path, rel_path)
+                if os.path.exists(abs_path):
+                    abs_service_dirs.append(abs_path)
+                else:
+                    logger.warning(
+                        f"Identified service directory '{rel_path}' does not exist in the repository."
+                    )
+            return abs_service_dirs
+        except Exception as e:
+            logger.error(
+                f"Error processing structured service identification output: {e}"
+            )
+            return []
 
     def generate_directory_summary(
         self, directory, dir_file_tree, file_contents, repo_file_tree
@@ -109,9 +164,20 @@ class CodebaseProcessor:
             repo_file_tree, _ = collect_files(
                 repo_path, self.allowed_extensions, repo_path
             )
-            major_dirs = self.list_major_directories(repo_path)
+
+            # Use LLM to identify service directories from the full repository tree.
+            service_dirs = self.identify_services(repo_path, repo_file_tree)
+            if service_dirs:
+                directories_to_process = service_dirs
+                logger.info(f"Identified service directories: {directories_to_process}")
+            else:
+                directories_to_process = self.list_major_directories(repo_path)
+                logger.info(
+                    "No specific service directories identified; falling back to major directories."
+                )
+
             summaries = {}
-            for directory in major_dirs:
+            for directory in directories_to_process:
                 logger.info(f"Processing directory: {directory}")
                 dir_file_tree, file_contents = collect_files(
                     directory, self.allowed_extensions, repo_path
@@ -120,7 +186,6 @@ class CodebaseProcessor:
                     directory, dir_file_tree, file_contents, repo_file_tree
                 )
                 summaries[directory] = summary
-
                 logger.info(f"Summary for {directory}:\n{summary}")
 
             logger.info("Merging all summaries...")

@@ -5,7 +5,6 @@ from oncall.constants import LOKI_PASSWORD, LOKI_USERNAME
 from oncall.lib.time import to_unix_nano
 from oncall.logs.utils import compress_loki_logs
 
-# Load environment variables
 load_dotenv()
 
 
@@ -31,11 +30,17 @@ def fetch_loki_logs(base_url, start, end, query, limit=5000, direction="forward"
 
 if __name__ == "__main__":
     base_url = "https://logs-prod-021.grafana.net"
-    start_time = "2025-03-03 03:22:29"
-    end_time = "2025-03-03 03:26:12"
-    query = '{job=~"default/(auth|payments|orders|tickets|expiration)"}'
+    start_time = "2025-03-04 00:00:00"
+    end_time = "2025-03-06 07:59:59"
+    query = '{service_name="payments"}'
+
+    start_ns = to_unix_nano(start_time)
+    end_ns = to_unix_nano(end_time)
+
+    print(f"Start (ns): {start_ns}, End (ns): {end_ns}")
 
     logs = fetch_loki_logs(base_url, start_time, end_time, query)
+    print(logs)
     formatted_logs = compress_loki_logs(logs)
 
     # Print each formatted log line

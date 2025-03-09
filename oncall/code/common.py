@@ -61,6 +61,7 @@ def collect_files(directory, allowed_extensions, repo_root):
     return file_tree, path_to_source_code
 
 
+# TODO: replace with tree command or glob
 def generate_tree_string(file_paths):
     """
     Given a list of file paths, generate a string that represents the file tree structure.

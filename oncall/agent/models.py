@@ -1,22 +1,31 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
+from oncall.code.tool import CodeSearchInput
+from oncall.logs.tool import LogSearchInput
 
-class LogSearchInput(BaseModel):
-    """Inputs for log search tool."""
 
-    start_time: str = Field(
-        ..., description="Start time in format 'YYYY-MM-DD HH:MM:SS'"
+class TaskComplete(BaseModel):
+    type: Literal["TaskComplete"] = "TaskComplete"
+
+
+class AttemptComplete(BaseModel):
+    type: Literal["AttemptComplete"] = "AttemptComplete"
+    root_cause: str = Field(
+        ...,
+        description="The root cause of the production issue. Must be specific and walk through the sequence of events that led to the issue. Include any relevant code snippets or log lines.",
     )
-    end_time: str = Field(..., description="End time in format 'YYYY-MM-DD HH:MM:SS'")
-    query: str = Field(
-        ..., description="Loki query string (e.g. '{job=~\"default/auth\"}')"
+
+
+class IntermediateReasoning(BaseModel):
+    type: Literal["IntermediateReasoning"] = "IntermediateReasoning"
+    reasoning: str = Field(
+        ...,
+        description="Intermediate reasoning on what context you have gathered so far, any issues you are encountering, and what you plan to do next. The main goal of this step is to promote further exploration. If you not gathered thorough context from BOTH code and logs, include that in next steps. If you have not explored other tangential services related to you issue (but maybe not directly affected), include that in next steps too.",
     )
-    limit: int = Field(5000, description="Maximum number of logs to return")
 
 
-class ModuleSelectionInput(BaseModel):
-    """Inputs for module selection tool."""
-
-    walkthrough: str = Field(..., description="Description of the codebase/system")
-    file_tree: str = Field(..., description="File tree structure of the codebase")
-    issue: str = Field(..., description="Description of the production issue")
+class AgentAction(BaseModel):
+    action: CodeSearchInput | LogSearchInput | IntermediateReasoning | AttemptComplete
+    action: CodeSearchInput | LogSearchInput | IntermediateReasoning | AttemptComplete

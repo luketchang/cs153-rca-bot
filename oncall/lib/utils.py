@@ -25,6 +25,7 @@ def get_llm(model: str, max_retries: int = 3, timeout: int = 60, **extra_kwargs)
             kwargs["seed"] = MODEL_SEED
         if model.startswith("o3"):
             kwargs["reasoning_effort"] = "high"
+            kwargs["disabled_params"] = {"parallel_tool_calls": None}
         return ChatOpenAI(**kwargs)
     elif model.startswith("claude"):
         return ChatAnthropic(**kwargs)
